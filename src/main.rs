@@ -1,22 +1,114 @@
 extern crate walkdir;
+extern crate puremp3;
 use walkdir::WalkDir;
+use std::path::Path;
+use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::fs;
+use std::fs::File;
+use puremp3::Mp3Decoder;
 use serde::Deserialize;
+use audiotags::Tag;
 
 #[derive(Debug, Deserialize)]
 struct Config {
     data_folder: String,
+    extensions: Vec<String>
 }
 
 #[derive(Debug)]
 struct AlbumInfo {
     band_name: String,
-    album_year: String,
-    album_name: String,
+    year: String,
+    name: String,
+    bitrate: String,
+    genre: String,
 }
 
 fn get_band_name(entry: &walkdir::DirEntry) -> Option<&str> {
     entry.path().parent()?.file_name()?.to_str()
+}
+
+fn get_album_bitrate_and_genre(extensions: &Vec<String>, path: &Path) -> (String, String) {
+    let mut bitrate: String = String::new();
+    let mut genre: String = String::new();
+
+    // Set of allowed extensions
+    let mut allowed_extensions: HashSet<&OsStr> = HashSet::new();
+    for ext in extensions.iter() {
+        allowed_extensions.insert(OsStr::new(ext));
+    }
+
+    // Read the directory
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let file_path = entry.path();
+                if file_path.is_file() && file_path.extension().map_or(false, |e| allowed_extensions.contains(e)) {
+                    if let Some(ext) = file_path.extension() {
+                        let file_extension = ext.to_string_lossy().to_uppercase();
+
+                        // Read MP3 bitrate
+                        if file_extension == "MP3" {
+                            let file = File::open(file_path.clone()).unwrap();
+                            let mut decoder = Mp3Decoder::new(file);
+
+                            match decoder.next_frame() {
+                                Ok(frame) => {
+                                    let current_bitrate = (frame.header.bitrate.bps() / 1000).to_string();
+                                    if bitrate.is_empty() {
+                                        bitrate = current_bitrate;
+                                    }
+                                    else if bitrate != current_bitrate {
+                                        bitrate = String::from("VBR");
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    // Handle the error
+                                    eprintln!("Cannot read file '{}'!", file_path.clone().to_string_lossy());
+                                    eprintln!("{}", e);
+                                    bitrate = String::from("?");
+                                    continue;
+                                }
+                            }
+                        }
+                        else {
+                            if bitrate.is_empty() {
+                                bitrate = file_extension;
+                            }
+                            else if bitrate != file_extension {
+                                bitrate = String::from("?");
+                            }
+                        }
+
+                        // Read tags
+                        match Tag::new().read_from_path(file_path.clone()) {
+                            Ok(tag) => {
+                                // Successfully got the tag, use it here
+                                let current_genre: String = tag.genre().unwrap().to_string();
+                                if genre.is_empty() {
+                                    genre = current_genre;
+                                }
+                                else if genre != current_genre {
+                                    genre = String::from("?");
+                                    break;
+                                }
+                            },
+                            Err(e) => {
+                                // Handle the error
+                                eprintln!("Cannot read tag in file '{}'!", file_path.to_string_lossy());
+                                eprintln!("{}", e);
+                                genre = String::from("?");
+                                continue;
+                            }
+                        }
+                   }
+                }
+            }
+        }
+    }
+    (bitrate, genre)
 }
 
 fn main() {
@@ -31,12 +123,15 @@ fn main() {
     for entry in WalkDir::new(config.data_folder).into_iter().filter_map(|entry: Result<walkdir::DirEntry, walkdir::Error>| entry.ok()) {
         if entry.metadata().map_or(false, |m| m.is_dir()) && entry.depth() == 2 {
             if let Some(name) = entry.file_name().to_str() {
-                if let Some((album_year, album_name)) = name.split_once('-') {
+                if let Some((year, name)) = name.split_once('-') {
                     if let Some(band_name) = get_band_name(&entry) {
+                        let (bitrate, genre) = get_album_bitrate_and_genre(&config.extensions, entry.path());
                         album_data.push(AlbumInfo {
                             band_name: band_name.to_string(),
-                            album_year: album_year.trim().to_string(),
-                            album_name: album_name.trim().to_string(),
+                            year: year.trim().to_string(),
+                            name: name.trim().to_string(),
+                            bitrate,
+                            genre
                         });
                     }
                 }
@@ -45,6 +140,6 @@ fn main() {
     }
 
     for album in &album_data {
-        println!("{};{};{}", album.band_name, album.album_year, album.album_name);
+        println!("{};{};{};{};{}", album.band_name, album.year, album.name, album.bitrate, album.genre);
     }
 }
