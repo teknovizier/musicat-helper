@@ -1,4 +1,4 @@
 {
     "data_folder": "C:\\Users\\User\\Music\\",
-    "extensions": ["mp3", "wav", "flac", "ogg", "ape"]
+    "extensions": ["ape", "flac", "mp3", "ogg", "wav", "wma"]
 }
