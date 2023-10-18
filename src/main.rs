@@ -3,26 +3,31 @@ extern crate minimp3;
 use walkdir::WalkDir;
 use std::path::{Path, PathBuf};
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use serde::Deserialize;
 use audiotags::Tag;
-use minimp3::{Decoder, Error, Frame};
+use minimp3::{Decoder, Error as Mp3Error, Frame};
+use umya_spreadsheet::*;
 
 #[derive(Debug, Deserialize)]
 struct Config {
     data_folder: String,
-    extensions: Vec<String>
+    extensions: Vec<String>,
+    spreadsheet: String,
+    worksheet: String
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AlbumInfo {
     band_name: String,
     year: String,
     name: String,
     bitrate: String,
     genre: String,
+    comment: String
 }
 
 fn get_band_name(entry: &walkdir::DirEntry) -> Option<&str> {
@@ -68,7 +73,7 @@ fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut f
                                     break;
                                 }
                             }
-                            Err(Error::Eof) => {
+                            Err(Mp3Error::Eof) => {
                                 eprintln!("File '{}' did not contain any frames!", file_path.to_string_lossy());
                             }
                             Err(e) => {
@@ -135,35 +140,101 @@ fn get_album_bitrate_and_genre(extensions: &Vec<String>, path: &Path) -> (String
     (bitrate, genre)
 }
 
-fn main() {
-    // Read the config file
-    let config_str = fs::read_to_string("config.json").expect("ERROR: Failed to read config file");
+fn find_last_row_by_column_value(worksheet: &Worksheet, column_value: String) -> Option<u32> {
+    // Iterate over the rows in reverse order, starting from the maximum row
+    let max_row = worksheet.get_highest_row();
+    for row in (1..=max_row).rev() {
+        let value = worksheet.get_value((1, row));
+        if !value.is_empty() && value == column_value {
+            // Return the row index as an option
+            return Some(row);
+        }
+    }
+    None
+}
 
-    // Parse and deserialize the config
+fn main() {
+
+    // Read the config file, parse and deserialize the config
+    let config_str = fs::read_to_string("config.json").expect("ERROR: Failed to read config file");
     let config: Config = serde_json::from_str(&config_str).expect("ERROR: Failed to parse the config");
 
-    let mut album_data = Vec::new();
+    let mut album_data: HashMap<String, Vec<(String, String, String, String, String)>> = HashMap::new();
+    let mut total_albums: (u32, u32) = (0, 0);
 
+    // Iterate over the folders
     for entry in WalkDir::new(config.data_folder).into_iter().filter_map(|entry: Result<walkdir::DirEntry, walkdir::Error>| entry.ok()) {
         if entry.metadata().map_or(false, |m| m.is_dir()) && entry.depth() == 2 {
             if let Some(name) = entry.file_name().to_str() {
                 if let Some((year, name)) = name.split_once('-') {
                     if let Some(band_name) = get_band_name(&entry) {
                         let (bitrate, genre) = get_album_bitrate_and_genre(&config.extensions, entry.path());
-                        album_data.push(AlbumInfo {
-                            band_name: band_name.to_string(),
-                            year: year.trim().to_string(),
-                            name: name.trim().to_string(),
-                            bitrate,
-                            genre
-                        });
+                        album_data.entry(band_name.to_string()).or_insert_with(Vec::new).push(
+                            (year.trim().to_string(), name.trim().to_string(), bitrate, genre, String::new()));
+                        total_albums.0 += 1;
                     }
                 }
             }
         } 
     }
 
-    for album in &album_data {
-        println!("{};{};{};{};{}", album.band_name, album.year, album.name, album.bitrate, album.genre);
+    // Open the spreadsheet
+    let path = std::path::Path::new(&config.spreadsheet);
+    let mut book = match reader::xlsx::read(path) {
+        Ok(book) => book,
+        Err(error) => panic!("Problem opening the file: {:?}", error),
+    };
+
+    let mut worksheet = match book.get_sheet_by_name_mut(&config.worksheet) {
+        Ok(worksheet) => worksheet,
+        Err(error) => panic!("Problem opening the worksheet: {:?}", error),
+    };
+
+    // Get cell styles from the top row
+    let cell_styles: [Style; 6] = [
+        worksheet.get_style((1, 2)).clone(),
+        worksheet.get_style((2, 2)).clone(),
+        worksheet.get_style((3, 2)).clone(),
+        worksheet.get_style((4, 2)).clone(),
+        worksheet.get_style((5, 2)).clone(),
+        worksheet.get_style((6, 2)).clone()
+    ];
+
+    // Iterate over the hashmap entries
+    for (band, albums) in album_data {
+        // Find the last row that contains the band name
+        let last_row = find_last_row_by_column_value(worksheet, band.clone()).unwrap_or(worksheet.get_highest_row());
+        // Insert new rows after the last row
+        let rows: u32 = albums.len() as u32;
+        worksheet.insert_new_row(&(last_row + 1), &rows);
+        
+        // Set the value of the new cells
+        let mut row_index: u32 = last_row;
+        for album in albums {
+            // Destructure the tuple into an array
+            let album_details: [String; 5] = [album.0, album.1, album.2, album.3, album.4];
+    
+            let mut coords = (1, row_index + 1);
+            // Fill band name
+            worksheet.get_cell_mut(coords).set_value(band.to_string());
+            //let mut style= ;
+            worksheet.set_style(coords, cell_styles[0].clone().set_background_color("9A0F00").clone());
+
+            // Fill album details
+            for col_index in 0..4 {
+                coords = ((col_index + 2) as u32, row_index + 1);
+                worksheet.get_cell_mut(coords).set_value(album_details[col_index].to_string());
+                worksheet.set_style(coords, cell_styles[col_index + 1].clone().set_background_color("9A0F00").clone());
+            }
+
+            total_albums.1 += 1;
+            row_index += 1;
+        } 
     }
+
+    let _ = match writer::xlsx::write(&book, path) {
+        Ok(_) => println!("Successfully added {}/{} albums to the spreadsheet '{}'", total_albums.1, total_albums.0, config.spreadsheet),
+        Err(error) => panic!("Problem saving changes: {:?}", error),
+    };
+
 }

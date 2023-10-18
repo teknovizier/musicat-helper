@@ -1,4 +1,6 @@
 {
     "data_folder": "C:\\Users\\User\\Music\\",
-    "extensions": ["ape", "flac", "mp3", "ogg", "wav", "wma"]
+    "extensions": ["ape", "flac", "mp3", "ogg", "wav", "wma"],
+    "spreadsheet": "C:\\Users\\User\\Music\\Collection.xlsx",
+    "worksheet": "Sheet1"
 }
