@@ -1,8 +1,10 @@
 {
     "data_folder": "C:\\Users\\User\\Music\\",
     "extensions": ["ape", "flac", "mp3", "ogg", "wav", "wma"],
-    "spreadsheet": "C:\\Users\\User\\Music\\Collection.xlsx",
-    "worksheet": "Sheet1",
-    "first_column": 1,
-    "first_row": 2
+    "spreadsheet": {
+        "file_name": "C:\\Users\\User\\Music\\Collection.xlsx",
+        "sheet": "Sheet1",
+        "first_column": 1,
+        "first_row": 2
+    }
 }

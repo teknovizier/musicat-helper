@@ -16,8 +16,13 @@ use umya_spreadsheet::*;
 struct Config {
     data_folder: String,
     extensions: Vec<String>,
-    spreadsheet: String,
-    worksheet: String,
+    spreadsheet: SpreadsheetConfig
+}
+
+#[derive(Debug, Deserialize)]
+struct SpreadsheetConfig {
+    file_name: String,
+    sheet: String,
     first_column: u32,
     first_row: u32
 }
@@ -181,31 +186,31 @@ fn main() {
     }
 
     // Open the spreadsheet
-    let path = std::path::Path::new(&config.spreadsheet);
+    let path = std::path::Path::new(&(config.spreadsheet.file_name));
     let mut book = match reader::xlsx::read(path) {
         Ok(book) => book,
         Err(error) => panic!("Problem opening the file: {:?}", error),
     };
 
-    let mut worksheet = match book.get_sheet_by_name_mut(&config.worksheet) {
+    let mut worksheet = match book.get_sheet_by_name_mut(&(config.spreadsheet.sheet)) {
         Ok(worksheet) => worksheet,
         Err(error) => panic!("Problem opening the worksheet: {:?}", error),
     };
 
     // Get cell styles from the top row
     let cell_styles: [Style; 6] = [
-        worksheet.get_style((config.first_column, config.first_row)).clone(),
-        worksheet.get_style((config.first_column + 1, config.first_row)).clone(),
-        worksheet.get_style((config.first_column + 2, config.first_row)).clone(),
-        worksheet.get_style((config.first_column + 3, config.first_row)).clone(),
-        worksheet.get_style((config.first_column + 4, config.first_row)).clone(),
-        worksheet.get_style((config.first_column + 5, config.first_row)).clone()
+        worksheet.get_style((config.spreadsheet.first_column, config.spreadsheet.first_row)).clone(),
+        worksheet.get_style((config.spreadsheet.first_column + 1, config.spreadsheet.first_row)).clone(),
+        worksheet.get_style((config.spreadsheet.first_column + 2, config.spreadsheet.first_row)).clone(),
+        worksheet.get_style((config.spreadsheet.first_column + 3, config.spreadsheet.first_row)).clone(),
+        worksheet.get_style((config.spreadsheet.first_column + 4, config.spreadsheet.first_row)).clone(),
+        worksheet.get_style((config.spreadsheet.first_column + 5, config.spreadsheet.first_row)).clone()
     ];
 
     // Iterate over the hashmap entries
     for (band, albums) in album_data {
         // Find the last row that contains the band name
-        let last_row = find_last_row_by_column_value(worksheet, band.clone(), config.first_column, config.first_row).unwrap_or(worksheet.get_highest_row());
+        let last_row = find_last_row_by_column_value(worksheet, band.clone(), config.spreadsheet.first_column, config.spreadsheet.first_row).unwrap_or(worksheet.get_highest_row());
         // Insert new rows after the last row
         let rows: u32 = albums.len() as u32;
         worksheet.insert_new_row(&(last_row + 1), &rows);
@@ -216,7 +221,7 @@ fn main() {
             // Destructure the tuple into an array
             let album_details: [String; 5] = [album.0, album.1, album.2, album.3, album.4];
     
-            let mut coords = (config.first_column, row_index + 1);
+            let mut coords = (config.spreadsheet.first_column, row_index + 1);
             // Fill band name
             worksheet.get_cell_mut(coords).set_value(band.to_string());
             //let mut style= ;
@@ -235,7 +240,7 @@ fn main() {
     }
 
     let _ = match writer::xlsx::write(&book, path) {
-        Ok(_) => println!("Successfully added {}/{} albums to the spreadsheet '{}'", total_albums.1, total_albums.0, config.spreadsheet),
+        Ok(_) => println!("Successfully added {}/{} albums to the spreadsheet '{}'", total_albums.1, total_albums.0, config.spreadsheet.file_name),
         Err(error) => panic!("Problem saving changes: {:?}", error),
     };
 
