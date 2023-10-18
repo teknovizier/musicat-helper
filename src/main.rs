@@ -152,7 +152,7 @@ fn find_last_row_by_column_value(worksheet: &Worksheet, column_value: String, fi
     let max_row = worksheet.get_highest_row();
     for row in (first_row..=max_row).rev() {
         let value = worksheet.get_value((first_column, row));
-        if !value.is_empty() && value == column_value {
+        if value <= column_value {
             // Return the row index as an option
             return Some(row);
         }
