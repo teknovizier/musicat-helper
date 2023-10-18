@@ -17,7 +17,9 @@ struct Config {
     data_folder: String,
     extensions: Vec<String>,
     spreadsheet: String,
-    worksheet: String
+    worksheet: String,
+    first_column: u32,
+    first_row: u32
 }
 
 #[derive(Debug, Clone)]
@@ -140,11 +142,11 @@ fn get_album_bitrate_and_genre(extensions: &Vec<String>, path: &Path) -> (String
     (bitrate, genre)
 }
 
-fn find_last_row_by_column_value(worksheet: &Worksheet, column_value: String) -> Option<u32> {
+fn find_last_row_by_column_value(worksheet: &Worksheet, column_value: String, first_column: u32, first_row: u32) -> Option<u32> {
     // Iterate over the rows in reverse order, starting from the maximum row
     let max_row = worksheet.get_highest_row();
-    for row in (1..=max_row).rev() {
-        let value = worksheet.get_value((1, row));
+    for row in (first_row..=max_row).rev() {
+        let value = worksheet.get_value((first_column, row));
         if !value.is_empty() && value == column_value {
             // Return the row index as an option
             return Some(row);
@@ -192,18 +194,18 @@ fn main() {
 
     // Get cell styles from the top row
     let cell_styles: [Style; 6] = [
-        worksheet.get_style((1, 2)).clone(),
-        worksheet.get_style((2, 2)).clone(),
-        worksheet.get_style((3, 2)).clone(),
-        worksheet.get_style((4, 2)).clone(),
-        worksheet.get_style((5, 2)).clone(),
-        worksheet.get_style((6, 2)).clone()
+        worksheet.get_style((config.first_column, config.first_row)).clone(),
+        worksheet.get_style((config.first_column + 1, config.first_row)).clone(),
+        worksheet.get_style((config.first_column + 2, config.first_row)).clone(),
+        worksheet.get_style((config.first_column + 3, config.first_row)).clone(),
+        worksheet.get_style((config.first_column + 4, config.first_row)).clone(),
+        worksheet.get_style((config.first_column + 5, config.first_row)).clone()
     ];
 
     // Iterate over the hashmap entries
     for (band, albums) in album_data {
         // Find the last row that contains the band name
-        let last_row = find_last_row_by_column_value(worksheet, band.clone()).unwrap_or(worksheet.get_highest_row());
+        let last_row = find_last_row_by_column_value(worksheet, band.clone(), config.first_column, config.first_row).unwrap_or(worksheet.get_highest_row());
         // Insert new rows after the last row
         let rows: u32 = albums.len() as u32;
         worksheet.insert_new_row(&(last_row + 1), &rows);
@@ -214,7 +216,7 @@ fn main() {
             // Destructure the tuple into an array
             let album_details: [String; 5] = [album.0, album.1, album.2, album.3, album.4];
     
-            let mut coords = (1, row_index + 1);
+            let mut coords = (config.first_column, row_index + 1);
             // Fill band name
             worksheet.get_cell_mut(coords).set_value(band.to_string());
             //let mut style= ;
