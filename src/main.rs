@@ -1,14 +1,14 @@
 extern crate walkdir;
-extern crate puremp3;
+extern crate minimp3;
 use walkdir::WalkDir;
 use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
-use puremp3::Mp3Decoder;
 use serde::Deserialize;
 use audiotags::Tag;
+use minimp3::{Decoder, Error, Frame};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -42,7 +42,7 @@ fn get_subdirectories(path: &Path) -> Vec<PathBuf> {
     subdirectories
 }
 
-fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut bitrate: String, mut genre: String) -> (String, String) {
+fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut folder_bitrate: String, mut folder_genre: String) -> (String, String) {
     // Read the directory
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -54,33 +54,35 @@ fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut b
                     // Read MP3 bitrate
                     if file_extension == "MP3" {
                         let file = File::open(file_path.clone()).unwrap();
-                        let mut decoder = Mp3Decoder::new(file);
+                        let mut decoder = Decoder::new(file);
 
+                        // Read the first frame to get the bitrate
                         match decoder.next_frame() {
-                            Ok(frame) => {
-                                let current_bitrate = (frame.header.bitrate.bps() / 1000).to_string();
-                                if bitrate.is_empty() {
-                                    bitrate = current_bitrate;
+                            Ok(Frame { bitrate, .. }) => {
+                                let current_bitrate: String = bitrate.to_string();
+                                if folder_bitrate.is_empty() {
+                                    folder_bitrate = current_bitrate;
                                 }
-                                else if bitrate != current_bitrate {
-                                    bitrate = String::from("VBR");
+                                else if folder_bitrate != current_bitrate {
+                                    folder_bitrate = String::from("VBR");
                                     break;
                                 }
                             }
+                            Err(Error::Eof) => {
+                                eprintln!("File '{}' did not contain any frames!", file_path.to_string_lossy());
+                            }
                             Err(e) => {
-                                // Handle the error
-                                eprintln!("Cannot read file '{}'!", file_path.clone().to_string_lossy());
-                                eprintln!("{}", e);
-                                bitrate = String::from("?");
+                                eprintln!("Cannot read file '{}'", file_path.to_string_lossy());
+                                eprintln!("Error decoding: {:?}", e);
                             }
                         }
                     }
                     else {
-                        if bitrate.is_empty() {
-                            bitrate = file_extension;
+                        if folder_bitrate.is_empty() {
+                            folder_bitrate = file_extension;
                         }
-                        else if bitrate != file_extension {
-                            bitrate = String::from("?");
+                        else if folder_bitrate != file_extension {
+                            folder_bitrate = String::from("?");
                         }
                     }
 
@@ -89,26 +91,26 @@ fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut b
                         Ok(tag) => {
                             // Successfully got the tag, use it here
                             let current_genre: String = tag.genre().unwrap().to_string();
-                            if genre.is_empty() {
-                                genre = current_genre;
+                            if folder_genre.is_empty() {
+                                folder_genre = current_genre;
                             }
-                            else if genre != current_genre {
-                                genre = String::from("?");
+                            else if folder_genre != current_genre {
+                                folder_genre = String::from("?");
                                 break;
                             }
                         },
                         Err(e) => {
                             // Handle the error
-                            eprintln!("Cannot read tag in file '{}'!", file_path.to_string_lossy());
+                            eprintln!("Cannot read tag in file '{}'", file_path.to_string_lossy());
                             eprintln!("{}", e);
-                            genre = String::from("?");
+                            folder_genre = String::from("?");
                         }
                     }
                 }
             }
         }
     }
-    (bitrate, genre)
+    (folder_bitrate, folder_genre)
 }
 
 fn get_album_bitrate_and_genre(extensions: &Vec<String>, path: &Path) -> (String, String) {
