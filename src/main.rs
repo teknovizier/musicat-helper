@@ -27,16 +27,6 @@ struct SpreadsheetConfig {
     first_row: u32
 }
 
-#[derive(Debug, Clone)]
-struct AlbumInfo {
-    band_name: String,
-    year: String,
-    name: String,
-    bitrate: String,
-    genre: String,
-    comment: String
-}
-
 fn get_band_name(entry: &walkdir::DirEntry) -> Option<&str> {
     entry.path().parent()?.file_name()?.to_str()
 }
