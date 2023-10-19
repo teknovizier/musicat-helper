@@ -102,7 +102,10 @@ fn get_folder_bitrate_and_genre(extensions: &HashSet<&OsStr>, path: &Path, mut f
                     match Tag::new().read_from_path(file_path.clone()) {
                         Ok(tag) => {
                             // Successfully got the tag, use it here
-                            let current_genre: String = tag.genre().unwrap().to_string();
+                            let current_genre = match tag.genre() {
+                                Some(current_genre) => current_genre.to_string().replace("\0", "/"),
+                                None => String::from("?")
+                            };
                             if folder_genre.is_empty() {
                                 folder_genre = current_genre;
                             }
