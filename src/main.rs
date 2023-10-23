@@ -182,6 +182,14 @@ fn main() {
         println!("No albums have found!");
     }
     else {
+        // Sort albums by year and name
+        for data in album_data.values_mut() {
+            data.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+        }
+
         // Open the spreadsheet
         let path = std::path::Path::new(&(config.spreadsheet.file_name));
         let mut book = match reader::xlsx::read(path) {
