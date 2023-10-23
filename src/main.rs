@@ -14,9 +14,14 @@ use umya_spreadsheet::*;
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    data_folder: String,
-    extensions: Vec<String>,
+    main: MainConfig,
     spreadsheet: SpreadsheetConfig
+}
+
+#[derive(Debug, Deserialize)]
+struct MainConfig {
+    data_folder: String,
+    extensions: Vec<String>
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +30,20 @@ struct SpreadsheetConfig {
     sheet: String,
     first_column: u32,
     first_row: u32
+}
+
+fn load_config(file: &str) -> Config {
+    let contents = match fs::read_to_string(file) {
+        Ok(_a) => _a,
+        Err(_) => panic!("Could not read file '{}'", file),
+    };
+
+    let config: Config = match toml::from_str(&contents) {
+        Ok(_b) => _b,
+        Err(_) => panic!("Unable to load data from '{}'", file),
+    };
+
+    return config;
 }
 
 fn get_band_name(entry: &walkdir::DirEntry) -> Option<&str> {
@@ -155,20 +174,19 @@ fn find_last_row_by_column_value(worksheet: &Worksheet, column_value: String, fi
 
 fn main() {
 
-    // Read the config file, parse and deserialize the config
-    let config_str = fs::read_to_string("config.json").expect("ERROR: Failed to read config file");
-    let config: Config = serde_json::from_str(&config_str).expect("ERROR: Failed to parse the config");
+    // Read the config file
+    let config = load_config("config.toml");
 
     let mut album_data: HashMap<String, Vec<(String, String, String, String, String)>> = HashMap::new();
     let mut total_albums: (u32, u32) = (0, 0);
 
     // Iterate over the folders
-    for entry in WalkDir::new(config.data_folder).into_iter().filter_map(|entry: Result<walkdir::DirEntry, walkdir::Error>| entry.ok()) {
+    for entry in WalkDir::new(config.main.data_folder).into_iter().filter_map(|entry: Result<walkdir::DirEntry, walkdir::Error>| entry.ok()) {
         if entry.metadata().map_or(false, |m| m.is_dir()) && entry.depth() == 2 {
             if let Some(name) = entry.file_name().to_str() {
                 if let Some((year, name)) = name.split_once('-') {
                     if let Some(band_name) = get_band_name(&entry) {
-                        let (bitrate, genre) = get_album_bitrate_and_genre(&config.extensions, entry.path());
+                        let (bitrate, genre) = get_album_bitrate_and_genre(&config.main.extensions, entry.path());
                         album_data.entry(band_name.to_string()).or_insert_with(Vec::new).push(
                             (year.trim().to_string(), name.trim().to_string(), bitrate, genre, String::new()));
                         total_albums.0 += 1;
@@ -196,12 +214,12 @@ fn main() {
             Ok(book) => book,
             Err(error) => panic!("Problem opening the file: {:?}", error),
         };
-    
+
         let mut worksheet = match book.get_sheet_by_name_mut(&(config.spreadsheet.sheet)) {
             Ok(worksheet) => worksheet,
             Err(error) => panic!("Problem opening the worksheet: {:?}", error),
         };
-    
+
         // Get cell styles from the top row
         let cell_styles: [Style; 6] = [
             worksheet.get_style((config.spreadsheet.first_column, config.spreadsheet.first_row)).clone(),
@@ -211,7 +229,7 @@ fn main() {
             worksheet.get_style((config.spreadsheet.first_column + 4, config.spreadsheet.first_row)).clone(),
             worksheet.get_style((config.spreadsheet.first_column + 5, config.spreadsheet.first_row)).clone()
         ];
-    
+
         // Iterate over the hashmap entries
         for (band, albums) in album_data {
             // Find the last row that contains the band name
@@ -219,35 +237,35 @@ fn main() {
             // Insert new rows after the last row
             let rows: u32 = albums.len() as u32;
             worksheet.insert_new_row(&(last_row + 1), &rows);
-            
+
             // Set the value of the new cells
             let mut row_index: u32 = last_row;
             for album in albums {
                 // Destructure the tuple into an array
                 let album_details: [String; 5] = [album.0, album.1, album.2, album.3, album.4];
-        
+
                 let mut coords = (config.spreadsheet.first_column, row_index + 1);
                 // Fill band name
                 worksheet.get_cell_mut(coords).set_value(band.to_string());
                 //let mut style= ;
                 worksheet.set_style(coords, cell_styles[0].clone().set_background_color("9A0F00").clone());
-    
+
                 // Fill album details
                 for col_index in 0..4 {
                     coords = ((col_index + 2) as u32, row_index + 1);
                     worksheet.get_cell_mut(coords).set_value(album_details[col_index].to_string());
                     worksheet.set_style(coords, cell_styles[col_index + 1].clone().set_background_color("9A0F00").clone());
                 }
-    
+
                 total_albums.1 += 1;
                 row_index += 1;
-            } 
+            }
         }
-    
+
         let _ = match writer::xlsx::write(&book, path) {
             Ok(_) => println!("Successfully added {}/{} albums to the spreadsheet '{}'", total_albums.1, total_albums.0, config.spreadsheet.file_name),
             Err(error) => panic!("Problem saving changes: {:?}", error),
-        };    
+        };
     }
 
 }
