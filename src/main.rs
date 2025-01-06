@@ -180,6 +180,7 @@ fn main() {
     let mut album_data: HashMap<String, Vec<(String, String, String, String, String)>> = HashMap::new();
     let mut total_albums: (u32, u32) = (0, 0);
 
+    println!("Reading data...");
     // Iterate over the folders
     for entry in WalkDir::new(config.main.data_folder).into_iter().filter_map(|entry: Result<walkdir::DirEntry, walkdir::Error>| entry.ok()) {
         if entry.metadata().map_or(false, |m| m.is_dir()) && entry.depth() == 2 {
@@ -232,6 +233,8 @@ fn main() {
 
         // Iterate over the hashmap entries
         for (band, albums) in album_data {
+            println!("Started processing albums for the band '{}'...", band);
+
             // Find the last row that contains the band name
             let last_row = find_last_row_by_column_value(worksheet, band.clone(), config.spreadsheet.first_column, config.spreadsheet.first_row).unwrap_or(worksheet.get_highest_row());
             // Insert new rows after the last row
@@ -247,7 +250,6 @@ fn main() {
                 let mut coords = (config.spreadsheet.first_column, row_index + 1);
                 // Fill band name
                 worksheet.get_cell_mut(coords).set_value(band.to_string());
-                //let mut style= ;
                 worksheet.set_style(coords, cell_styles[0].clone().set_background_color("9A0F00").clone());
 
                 // Fill album details
@@ -256,6 +258,8 @@ fn main() {
                     worksheet.get_cell_mut(coords).set_value(album_details[col_index].to_string());
                     worksheet.set_style(coords, cell_styles[col_index + 1].clone().set_background_color("9A0F00").clone());
                 }
+
+                println!("Added album '{} - {}'", album_details[0].to_string(), album_details[1].to_string());
 
                 total_albums.1 += 1;
                 row_index += 1;
